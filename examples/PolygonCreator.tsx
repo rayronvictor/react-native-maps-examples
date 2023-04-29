@@ -7,16 +7,26 @@ import {
   TouchableOpacity,
 } from 'react-native';
 
-import MapView, {MAP_TYPES, Polygon} from 'react-native-maps';
+import MapView, {MAP_TYPES, Marker, Polygon} from 'react-native-maps';
+import { Int32 } from 'react-native/Libraries/Types/CodegenTypes';
+import flagBlueImg from './assets/flag-blue.png';
+import { isFunctionExpression } from 'typescript';
 
 const {width, height} = Dimensions.get('window');
 
 const ASPECT_RATIO = width / height;
-const LATITUDE = 37.78825;
-const LONGITUDE = -122.4324;
+const LATITUDE = -6.0;
+const LONGITUDE = -36.0;
 const LATITUDE_DELTA = 0.0922;
 const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
 let id = 0;
+
+
+var isCreating = false;
+
+
+log = console.log;
+
 
 class PolygonCreator extends React.Component<any, any> {
   constructor(props: any) {
@@ -30,77 +40,73 @@ class PolygonCreator extends React.Component<any, any> {
         longitudeDelta: LONGITUDE_DELTA,
       },
       polygons: [],
+      creating: null,
       editing: null,
-      creatingHole: false,
     };
   }
 
   finish() {
-    const {polygons, editing} = this.state;
+
+    if (isCreating) {
+
+      const {polygons, creating} = this.state;
+      this.setState({
+        polygons: [...polygons, creating],
+      });
+
+      isCreating = false;
+    } else {
+
+      const {polygons, editing} = this.state;
+      let newPolygons = [...polygons]
+
+      log('-----------')
+      log(editing)
+      log(newPolygons)
+
+      newPolygons[editing.polyId].coordinates = editing.coordinates;
+      this.setState({
+        polygons: [...polygons],
+      });
+
+
+    }
     this.setState({
-      polygons: [...polygons, editing],
+      creating: null,
       editing: null,
-      creatingHole: false,
     });
+
   }
 
-  createHole() {
-    const {editing, creatingHole} = this.state;
-    if (!creatingHole) {
-      this.setState({
-        creatingHole: true,
-        editing: {
-          ...editing,
-          holes: [...editing.holes, []],
-        },
-      });
-    } else {
-      const holes = [...editing.holes];
-      if (holes[holes.length - 1].length === 0) {
-        holes.pop();
-        this.setState({
-          editing: {
-            ...editing,
-            holes,
-          },
-        });
-      }
-      this.setState({creatingHole: false});
-    }
-  }
+
 
   onPress(e: any) {
-    const {editing, creatingHole} = this.state;
-    if (!editing) {
+
+    if (!isCreating)
+      return;
+
+    const {creating, editing} = this.state;
+
+
+
+
+    if (!creating) {
       this.setState({
-        editing: {
+        creating: {
           id: id++,
           coordinates: [e.nativeEvent.coordinate],
-          holes: [],
-        },
-      });
-    } else if (!creatingHole) {
-      this.setState({
-        editing: {
-          ...editing,
-          coordinates: [...editing.coordinates, e.nativeEvent.coordinate],
         },
       });
     } else {
-      const holes = [...editing.holes];
-      holes[holes.length - 1] = [
-        ...holes[holes.length - 1],
-        e.nativeEvent.coordinate,
-      ];
+    
       this.setState({
-        editing: {
-          ...editing,
-          id: id++, // keep incrementing id to trigger display refresh
-          coordinates: [...editing.coordinates],
-          holes,
+        creating: {
+          ...this.state.creating,
+          coordinates: [...creating.coordinates, e.nativeEvent.coordinate],
         },
       });
     }
+
   }
 
   render() {
@@ -108,10 +114,11 @@ class PolygonCreator extends React.Component<any, any> {
       scrollEnabled: true,
     };
 
-    if (this.state.editing) {
+    if (this.state.creating) {
       mapOptions.scrollEnabled = false;
       mapOptions.onPanDrag = (e: any) => this.onPress(e);
     }
+
 
     return (
       <View style={styles.container}>
@@ -124,40 +131,190 @@ class PolygonCreator extends React.Component<any, any> {
           {...mapOptions}>
           {this.state.polygons.map((polygon: any) => (
             <Polygon
+              onPress={ (e:any)=>{  
+
+                isCreating = false;
+
+                this.setState({
+                  editing: {
+                    coordinates: [...polygon.coordinates],
+                    polyId : polygon.id
+                  },
+                  creating : null
+                });
+    
+
+              } }
               key={polygon.id}
               coordinates={polygon.coordinates}
-              holes={polygon.holes}
               strokeColor="#F00"
-              fillColor="rgba(255,0,0,0.5)"
+              fillColor="rgba(255,255,0,0.5)"
               strokeWidth={1}
+              tappable={true}
             />
           ))}
-          {this.state.editing && (
+
+
+          {this.state.creating && (
             <Polygon
-              key={this.state.editing.id}
-              coordinates={this.state.editing.coordinates}
-              holes={this.state.editing.holes}
+              key={this.state.creating.id}
+              coordinates={this.state.creating.coordinates}
               strokeColor="#000"
               fillColor="rgba(255,0,0,0.5)"
               strokeWidth={1}
             />
           )}
-        </MapView>
-        <View style={styles.buttonContainer}>
+
+
           {this.state.editing && (
-            <TouchableOpacity
-              onPress={() => this.createHole()}
-              style={[styles.bubble, styles.button]}>
-              <Text>
-                {this.state.creatingHole ? 'Finish Hole' : 'Create Hole'}
-              </Text>
-            </TouchableOpacity>
+            <Polygon
+              key={this.state.editing.polyId}
+              coordinates={this.state.editing.coordinates}
+              strokeColor="#000"
+              fillColor="rgba(255,0,100,0.5)"
+              strokeWidth={1}
+            />
           )}
-          {this.state.editing && (
+
+
+
+
+        { this.state.creating && this.state.creating.coordinates.map((coord: any, i:Int32) => (
+
+          <Marker
+          coordinate={coord}
+          onSelect={e => {
+
+            log('select', e.nativeEvent.coordinate);
+
+          }}
+          onDrag={e => {
+            newCoordinates[i] = e.nativeEvent.coordinate;
+            this.state.creating.coordinates = newCoordinates;
+            this.setState({
+              creating: {
+                coordinates: [...this.state.creating.coordinates],
+              },
+            });
+          }}
+          onDragStart={e => { 
+            newCoordinates = [...this.state.creating.coordinates];
+
+            newCoordinates[i] = e.nativeEvent.coordinate;
+            this.state.creating.coordinates = newCoordinates;
+
+            this.setState({
+              creating: {
+                coordinates: [...this.state.creating.coordinates],
+              },
+            });
+
+            log('drawStart', e.nativeEvent.coordinate);
+
+          }}
+          onDragEnd={e => {
+
+            log('dragEnd', e.nativeEvent.coordinate);
+
+          }}
+          onPress={e => {
+            log('press', e.nativeEvent.coordinate);
+
+          }}
+          draggable
+          image={flagBlueImg}
+          anchor={{x: 0.65, y: 0.95}}>
+            
+
+          </Marker>
+
+
+
+        ))}
+
+
+
+
+
+
+
+
+
+
+          { this.state.editing && this.state.editing.coordinates.map((coord: any, i:Int32) => (
+
+          <Marker
+          coordinate={coord}
+          onSelect={e => {
+
+            log('select', e.nativeEvent.coordinate);
+
+          }}
+          onDrag={e => {
+            newCoordinates[i] = e.nativeEvent.coordinate;
+            this.state.editing.coordinates = newCoordinates;
+            this.setState({
+              editing: { 
+                ...this.state.editing,
+                coordinates: [...this.state.editing.coordinates],
+              },
+            });
+          }}
+          onDragStart={e => { 
+            newCoordinates = [...this.state.editing.coordinates];
+
+            newCoordinates[i] = e.nativeEvent.coordinate;
+            this.state.editing.coordinates = newCoordinates;
+
+            this.setState({
+              editing: {
+                ...this.state.editing,
+                coordinates: [...this.state.editing.coordinates],
+              },
+            });
+
+            log('drawStart', e.nativeEvent.coordinate);
+
+          }}
+          onDragEnd={e => {
+
+            log('dragEnd', e.nativeEvent.coordinate);
+
+          }}
+          onPress={e => {
+            log('press', e.nativeEvent.coordinate);
+
+          }}
+          draggable
+          image={flagBlueImg}
+          anchor={{x: 0.65, y: 0.95}}>
+            
+
+          </Marker>
+
+
+
+          ))} 
+
+
+
+
+       </MapView>
+        <View style={styles.buttonContainer}>
+          {(this.state.creating || this.state.editing)&& (
             <TouchableOpacity
               onPress={() => this.finish()}
               style={[styles.bubble, styles.button]}>
               <Text>Finish</Text>
+            </TouchableOpacity>
+          )}
+          { (!isCreating && (!this.state.editing)) && (
+            <TouchableOpacity
+              onPress={() => {
+                isCreating = true;
+              } }
+              style={[styles.bubble, styles.button]}>
+              <Text>Create</Text>
             </TouchableOpacity>
           )}
         </View>
