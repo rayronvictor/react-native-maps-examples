@@ -1,3 +1,7 @@
+// TODO: make marker transparent on creating state (aparently iOS can do it but android dont...)
+// TODO: when editing, consolidate polygon on onDragEnd to allow move more than one marker in the same edit section
+// TODO: avoid creating marker on drag
+
 import React from 'react';
 import {
   StyleSheet,
@@ -7,25 +11,102 @@ import {
   TouchableOpacity,
 } from 'react-native';
 
-import MapView, {MAP_TYPES, Marker, Polygon} from 'react-native-maps';
+import MapView, {LocalTile, MAP_TYPES, Marker, Polygon} from 'react-native-maps';
 import { Int32 } from 'react-native/Libraries/Types/CodegenTypes';
-import flagBlueImg from './assets/flag-blue.png';
-import { isFunctionExpression } from 'typescript';
+import flagBlueImg from './assets/marker.png';
+//import { createModuleResolutionCache, isFunctionExpression } from 'typescript';
+
+import { getAreaOfPolygon, getDistance } from 'geolib';
+
 
 const {width, height} = Dimensions.get('window');
 
+const PRECISION = 2
 const ASPECT_RATIO = width / height;
-const LATITUDE = -6.0;
-const LONGITUDE = -36.0;
-const LATITUDE_DELTA = 0.0922;
+const LATITUDE = -5.8464;
+const LONGITUDE = -35.2037;
+const LATITUDE_DELTA = 0.000922;
 const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
-let id = 0;
 
+var ID = 0;
 
 var isCreating = false;
-
+var isJoining = false;
 
 log = console.log;
+
+
+
+function findIdForPolyId(newPolygons, polyId) {
+  var id = 0;
+  for (let localId in newPolygons) {
+    if (newPolygons[localId].id == polyId) id = localId
+  }
+
+  return id;
+}
+
+
+function computeAreaNutela(coordinates:any) {
+
+  let radius = 6371000;
+
+  let XY = coordinates.map( (coord:any) => [coord.latitude , coord.longitude] )
+
+  return getAreaOfPolygon(XY)
+
+}
+
+function computeAreaChuckNorris(coordinates:any) {
+
+  let radius = 6371000;
+
+  let XY = coordinates.map( (coord:any) => [Math.PI*coord.latitude*radius/180.0 , Math.cos(coord.latitude*Math.PI/180.0)*coord.longitude*Math.PI*radius/180.0] )
+
+
+  var area = 0.0;
+  for (let id=0; id< XY.length; id++) {
+
+
+    let roundId = (id+1)%XY.length;
+
+    let previousY = XY[id][0];
+    let previousX = XY[id][1];   
+
+    let currentY = XY[roundId][0];
+    let currentX = XY[roundId][1];
+
+    area += (currentY+previousY)*(currentX-previousX)/2.0;
+
+  }
+
+  return Math.abs(area);
+
+}
+
+
+let computeArea = computeAreaChuckNorris;
+//let computeArea = computeAreaNutela;
+
+
+
+function computeCenter(coordinates:any) {
+  var latCenter = 0.0;
+  var longCenter = 0.0;
+
+  for (let coordId in coordinates) {
+    latCenter += coordinates[coordId].latitude;
+    longCenter += coordinates[coordId].longitude;
+  }
+  latCenter /= coordinates.length;
+  longCenter /= coordinates.length;
+
+  let res = {"latitude":latCenter, "longitude":longCenter};
+
+
+  return res;
+}
+
 
 
 class PolygonCreator extends React.Component<any, any> {
@@ -50,6 +131,7 @@ class PolygonCreator extends React.Component<any, any> {
     if (isCreating) {
 
       const {polygons, creating} = this.state;
+
       this.setState({
         polygons: [...polygons, creating],
       });
@@ -60,17 +142,41 @@ class PolygonCreator extends React.Component<any, any> {
       const {polygons, editing} = this.state;
       let newPolygons = [...polygons]
 
-      log('-----------')
-      log(editing)
-      log(newPolygons)
+      let polyId = findIdForPolyId(newPolygons, editing.polyId);
 
-      newPolygons[editing.polyId].coordinates = editing.coordinates;
+      newPolygons[polyId].coordinates = editing.coordinates;
+
       this.setState({
-        polygons: [...polygons],
+        polygons: [...newPolygons],
       });
 
-
     }
+
+
+    this.setState({
+      creating: null,
+      editing: null,
+    });
+
+  }
+
+
+  delete() {
+
+    const {polygons, editing} = this.state;
+    let newPolygons = [...polygons]
+
+
+    let polyId = findIdForPolyId(newPolygons, editing.polyId);
+
+    newPolygons.splice(polyId,1);
+
+
+    this.setState({
+      polygons: [...newPolygons],
+    });
+
+
     this.setState({
       creating: null,
       editing: null,
@@ -80,20 +186,19 @@ class PolygonCreator extends React.Component<any, any> {
 
 
 
-  onPress(e: any) {
 
-    if (!isCreating)
-      return;
+  onPress(e: any) {
 
     const {creating, editing} = this.state;
 
-
+    if (!isCreating || editing)
+      return;
 
 
     if (!creating) {
       this.setState({
         creating: {
-          id: id++,
+          id: ID++,
           coordinates: [e.nativeEvent.coordinate],
         },
       });
@@ -109,15 +214,137 @@ class PolygonCreator extends React.Component<any, any> {
 
   }
 
+
+
+
   render() {
     const mapOptions: any = {
       scrollEnabled: true,
     };
 
-    if (this.state.creating) {
-      mapOptions.scrollEnabled = false;
-      mapOptions.onPanDrag = (e: any) => this.onPress(e);
-    }
+//    if (this.state.creating) {
+      //mapOptions.scrollEnabled = false;
+      //mapOptions.onPanDrag = (e: any) => this.onPress(e);
+//    }
+
+    let createMarker = (coord:any, creatingOrEditing:string, creatingOrEditingObj:any, i:int32) => (
+
+          <Marker
+          coordinate={coord}
+          onSelect={e => {
+
+            log('select', e.nativeEvent.coordinate);
+
+          }}
+
+          onDrag={e => {
+            var newCoordinates = [...creatingOrEditingObj.coordinates];
+
+            newCoordinates[i] = e.nativeEvent.coordinate;
+            this.setState({
+              [creatingOrEditing]: {
+                ...creatingOrEditingObj,
+                coordinates: [...newCoordinates],
+              },
+            });
+          }}
+
+          onDragStart={e => { 
+            var newCoordinates = [...creatingOrEditingObj.coordinates];
+
+            newCoordinates[i] = e.nativeEvent.coordinate;
+
+            this.setState({
+              [creatingOrEditing]: {
+                ...creatingOrEditingObj,
+                coordinates: [...newCoordinates],
+              },
+            });
+
+            log('drawStart', e.nativeEvent.coordinate);
+
+          }}
+          onDragEnd={e => {
+
+            log('dragEnd', e.nativeEvent.coordinate);
+
+          }}
+          onPress={e => {
+            log('press', e.nativeEvent.coordinate);
+
+          }}
+          draggable
+          image={flagBlueImg}
+          anchor={{x: 0.5, y: 0.5}}>
+            
+
+        </Marker>
+    )
+
+
+    let renderCurrentPolygon = (cratingOrEditingObj:any, color:string) => (
+      <Polygon
+      key={cratingOrEditingObj.id}
+      coordinates={cratingOrEditingObj.coordinates}
+      strokeColor="#000"
+      fillColor={color}
+      strokeWidth={1}
+      />
+    )
+
+
+    let renderPolygon = (polygon:any) => (
+      <Polygon
+        onPress={ (e:any)=>{  
+
+        isCreating = false;
+
+        this.setState({
+          editing: {
+            coordinates: [...polygon.coordinates],
+            polyId : polygon.id
+          },
+          creating : null
+        });
+
+
+      } }
+      key={'p'+polygon.id}
+      coordinates={polygon.coordinates}
+      strokeColor="#F00"
+      fillColor="rgba(255,255,0,0.5)"
+      strokeWidth={1}
+      tappable={true}
+    >
+
+
+      </Polygon>  
+    )
+
+    let renderPolygonMarker = (polygon:any) => (
+      <Marker
+      key={'m'+polygon.id}
+      coordinate={computeCenter(polygon.coordinates)}
+        tappable={false}>
+
+          <Text 
+          key={'t'+polygon.id}
+          style={{
+                fontWeight: 'bold',
+                color: 'white',
+            }} 
+            tappable={false}>
+            {"area = \n" + computeArea(polygon.coordinates).toFixed(PRECISION)}
+          </Text>
+
+
+      </Marker>
+
+    );
+
+
+
+
 
 
     return (
@@ -129,183 +356,50 @@ class PolygonCreator extends React.Component<any, any> {
           initialRegion={this.state.region}
           onPress={e => this.onPress(e)}
           {...mapOptions}>
+
           {this.state.polygons.map((polygon: any) => (
-            <Polygon
-              onPress={ (e:any)=>{  
-
-                isCreating = false;
-
-                this.setState({
-                  editing: {
-                    coordinates: [...polygon.coordinates],
-                    polyId : polygon.id
-                  },
-                  creating : null
-                });
-    
-
-              } }
-              key={polygon.id}
-              coordinates={polygon.coordinates}
-              strokeColor="#F00"
-              fillColor="rgba(255,255,0,0.5)"
-              strokeWidth={1}
-              tappable={true}
-            />
+            renderPolygon(polygon)
           ))}
 
+          {this.state.polygons.map((polygon: any) => (
+            renderPolygonMarker(polygon)
+          ))}
 
-          {this.state.creating && (
-            <Polygon
-              key={this.state.creating.id}
-              coordinates={this.state.creating.coordinates}
-              strokeColor="#000"
-              fillColor="rgba(255,0,0,0.5)"
-              strokeWidth={1}
-            />
-          )}
+          {this.state.creating && 
+            renderCurrentPolygon(this.state.creating, "rgba(55,0,255,0.5)")
+          }
 
+          {this.state.editing && 
+            renderCurrentPolygon(this.state.editing, "rgba(55,0,100,0.5)")
+          }
 
-          {this.state.editing && (
-            <Polygon
-              key={this.state.editing.polyId}
-              coordinates={this.state.editing.coordinates}
-              strokeColor="#000"
-              fillColor="rgba(255,0,100,0.5)"
-              strokeWidth={1}
-            />
-          )}
+          {this.state.editing && 
+            renderPolygonMarker({"coordinates" : this.state.editing.coordinates})
+          }
 
+          {this.state.creating && this.state.creating.coordinates.map((coord: any, i:Int32) => (
+            createMarker(coord, "creating", this.state.creating, i)
+          ))}
 
-
-
-        { this.state.creating && this.state.creating.coordinates.map((coord: any, i:Int32) => (
-
-          <Marker
-          coordinate={coord}
-          onSelect={e => {
-
-            log('select', e.nativeEvent.coordinate);
-
-          }}
-          onDrag={e => {
-            newCoordinates[i] = e.nativeEvent.coordinate;
-            this.state.creating.coordinates = newCoordinates;
-            this.setState({
-              creating: {
-                coordinates: [...this.state.creating.coordinates],
-              },
-            });
-          }}
-          onDragStart={e => { 
-            newCoordinates = [...this.state.creating.coordinates];
-
-            newCoordinates[i] = e.nativeEvent.coordinate;
-            this.state.creating.coordinates = newCoordinates;
-
-            this.setState({
-              creating: {
-                coordinates: [...this.state.creating.coordinates],
-              },
-            });
-
-            log('drawStart', e.nativeEvent.coordinate);
-
-          }}
-          onDragEnd={e => {
-
-            log('dragEnd', e.nativeEvent.coordinate);
-
-          }}
-          onPress={e => {
-            log('press', e.nativeEvent.coordinate);
-
-          }}
-          draggable
-          image={flagBlueImg}
-          anchor={{x: 0.65, y: 0.95}}>
-            
-
-          </Marker>
-
-
-
-        ))}
-
-
-
-
-
-
-
-
-
-
-          { this.state.editing && this.state.editing.coordinates.map((coord: any, i:Int32) => (
-
-          <Marker
-          coordinate={coord}
-          onSelect={e => {
-
-            log('select', e.nativeEvent.coordinate);
-
-          }}
-          onDrag={e => {
-            newCoordinates[i] = e.nativeEvent.coordinate;
-            this.state.editing.coordinates = newCoordinates;
-            this.setState({
-              editing: { 
-                ...this.state.editing,
-                coordinates: [...this.state.editing.coordinates],
-              },
-            });
-          }}
-          onDragStart={e => { 
-            newCoordinates = [...this.state.editing.coordinates];
-
-            newCoordinates[i] = e.nativeEvent.coordinate;
-            this.state.editing.coordinates = newCoordinates;
-
-            this.setState({
-              editing: {
-                ...this.state.editing,
-                coordinates: [...this.state.editing.coordinates],
-              },
-            });
-
-            log('drawStart', e.nativeEvent.coordinate);
-
-          }}
-          onDragEnd={e => {
-
-            log('dragEnd', e.nativeEvent.coordinate);
-
-          }}
-          onPress={e => {
-            log('press', e.nativeEvent.coordinate);
-
-          }}
-          draggable
-          image={flagBlueImg}
-          anchor={{x: 0.65, y: 0.95}}>
-            
-
-          </Marker>
-
-
-
+          {this.state.editing && this.state.editing.coordinates.map((coord: any, i:Int32) => (
+            createMarker(coord, "editing", this.state.editing, i)
           ))} 
-
-
-
-
        </MapView>
-        <View style={styles.buttonContainer}>
+
+
+       <View style={styles.buttonContainer}>
           {(this.state.creating || this.state.editing)&& (
             <TouchableOpacity
               onPress={() => this.finish()}
               style={[styles.bubble, styles.button]}>
               <Text>Finish</Text>
+            </TouchableOpacity>
+          )}
+          {(this.state.editing) && (
+            <TouchableOpacity
+              onPress={() => this.delete()}
+              style={[styles.bubble, styles.button]}>
+              <Text>Delete</Text>
             </TouchableOpacity>
           )}
           { (!isCreating && (!this.state.editing)) && (
@@ -317,11 +411,41 @@ class PolygonCreator extends React.Component<any, any> {
               <Text>Create</Text>
             </TouchableOpacity>
           )}
+          { this.state.polygons && (this.state.polygons.length >= 2) && (!this.state.editing) && (!isCreating) && (
+            <TouchableOpacity
+              onPress={() => {
+                isJoining = true;
+              } }
+              style={[styles.bubble, styles.button]}>
+              <Text>Join</Text>
+            </TouchableOpacity>
+          )}
+          { (
+            <TouchableOpacity
+              onPress={() => {
+                
+                d1 = getDistance(this.state.polygons[0].coordinates[0], this.state.polygons[0].coordinates[1])
+                d2 = getDistance(this.state.polygons[0].coordinates[1], this.state.polygons[0].coordinates[2])
+
+                log(d1)
+                log(d2)
+                
+
+              } }
+              style={[styles.bubble, styles.button]}>
+              <Text>poly</Text>
+            </TouchableOpacity>
+          )}
         </View>
+
       </View>
     );
   }
 }
+
+
+
+
 
 const styles = StyleSheet.create({
   container: {
