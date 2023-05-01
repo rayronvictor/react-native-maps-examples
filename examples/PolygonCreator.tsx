@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 
-import MapView, {LocalTile, MAP_TYPES, Marker, Polygon} from 'react-native-maps';
+import MapView, {MAP_TYPES, Marker, Polygon} from 'react-native-maps';
 import { Int32 } from 'react-native/Libraries/Types/CodegenTypes';
 import flagBlueImg from './assets/marker.png';
 
@@ -44,6 +44,10 @@ function findIdForPolyId(newPolygons, polyId) {
   return id;
 }
 
+
+function computeAngle(p1, p2) {
+  return 90.0+Math.atan2(p1[1]-p2[1],p1[0]-p2[0])*180/Math.PI;
+}
 
 function computeAreaNutela(coordinates:any) {
 
@@ -339,6 +343,47 @@ class PolygonCreator extends React.Component<any, any> {
     );
 
 
+    let renderPolygonEdgesMarker = (polygon:any) => {
+      
+      let markers = []
+
+      let coords = polygon.coordinates
+      for (let i=0; i<coords.length;i++) {
+        
+        let p1 = [coords[i].latitude, coords[i].longitude]
+        let p2 = [coords[(i+1)%coords.length].latitude, coords[(i+1)%coords.length].longitude]
+
+        let distance = getDistance(p1,p2)
+        let angle = computeAngle(p1,p2)
+
+        let center = {"latitude":(p1[0]+p2[0])/2.0, "longitude":(p1[1]+p2[1])/2.0}
+
+        markers.push(
+          <Marker
+            key={'m'+polygon.id + '-' + i}
+            coordinate={center}
+              tappable={false}
+                style={{
+                      transform: [{ rotate: angle+'deg'}]
+                  }}>
+
+                <Text 
+                key={'te'+polygon.id + '-' + i}
+                style={{
+                      fontWeight: 'bold',
+                      color: 'white',
+                  }} 
+                  tappable={false}>
+                  {"D = " + distance.toFixed(PRECISION)}
+                </Text>
+          </Marker>
+        )
+
+      }
+      return markers;
+    };
+
+
     let createButton = (text:string, callback:any) => (
       <TouchableOpacity
         onPress={callback}
@@ -363,6 +408,15 @@ class PolygonCreator extends React.Component<any, any> {
           {this.state.polygons.map((polygon: any) => (
             renderPolygon(polygon)
           ))}
+
+          {this.state.polygons.map((polygon: any) => (
+            renderPolygonEdgesMarker(polygon)
+          ))}
+
+          {this.state.creating && (
+            renderPolygonEdgesMarker(this.state.creating)
+          )}
+
 
           {this.state.polygons.map((polygon: any) => (
             renderPolygonMarker(polygon)
