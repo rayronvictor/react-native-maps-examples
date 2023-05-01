@@ -138,6 +138,10 @@ export default class App extends React.Component<any, any> {
   }
 
   render() {
+
+    return this.renderExamples( [ [PolygonCreator, 'Polygon Creator', true] ]);
+
+
     return this.renderExamples(
       [
         // [<component>, <component description>, <Google compatible>, <Google add'l description>]
