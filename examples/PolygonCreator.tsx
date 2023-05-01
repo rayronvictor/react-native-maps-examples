@@ -1,6 +1,5 @@
 // TODO: make marker transparent on creating state (aparently iOS can do it but android dont...)
 // TODO: when editing, consolidate polygon on onDragEnd to allow move more than one marker in the same edit section
-// TODO: avoid creating marker on drag
 
 import React from 'react';
 import {
@@ -14,7 +13,6 @@ import {
 import MapView, {LocalTile, MAP_TYPES, Marker, Polygon} from 'react-native-maps';
 import { Int32 } from 'react-native/Libraries/Types/CodegenTypes';
 import flagBlueImg from './assets/marker.png';
-//import { createModuleResolutionCache, isFunctionExpression } from 'typescript';
 
 import { getAreaOfPolygon, getDistance } from 'geolib';
 
@@ -48,8 +46,6 @@ function findIdForPolyId(newPolygons, polyId) {
 
 
 function computeAreaNutela(coordinates:any) {
-
-  let radius = 6371000;
 
   let XY = coordinates.map( (coord:any) => [coord.latitude , coord.longitude] )
 
@@ -343,6 +339,13 @@ class PolygonCreator extends React.Component<any, any> {
     );
 
 
+    let createButton = (text:string, callback:any) => (
+      <TouchableOpacity
+        onPress={callback}
+        style={[styles.bubble, styles.button]}>
+        <Text> {text} </Text>
+      </TouchableOpacity>
+    );
 
 
 
@@ -389,40 +392,18 @@ class PolygonCreator extends React.Component<any, any> {
 
        <View style={styles.buttonContainer}>
           {(this.state.creating || this.state.editing)&& (
-            <TouchableOpacity
-              onPress={() => this.finish()}
-              style={[styles.bubble, styles.button]}>
-              <Text>Finish</Text>
-            </TouchableOpacity>
+            createButton('finalizar', ()=>this.finish())
           )}
           {(this.state.editing) && (
-            <TouchableOpacity
-              onPress={() => this.delete()}
-              style={[styles.bubble, styles.button]}>
-              <Text>Delete</Text>
-            </TouchableOpacity>
+            createButton('apagar', ()=>this.delete())
           )}
           { (!isCreating && (!this.state.editing)) && (
-            <TouchableOpacity
-              onPress={() => {
-                isCreating = true;
-              } }
-              style={[styles.bubble, styles.button]}>
-              <Text>Create</Text>
-            </TouchableOpacity>
+            createButton('criar',() => { isCreating = true; } )
           )}
           { this.state.polygons && (this.state.polygons.length >= 2) && (!this.state.editing) && (!isCreating) && (
-            <TouchableOpacity
-              onPress={() => {
-                isJoining = true;
-              } }
-              style={[styles.bubble, styles.button]}>
-              <Text>Join</Text>
-            </TouchableOpacity>
+            createButton('juntar',() => { isJoining = true; } )
           )}
-          { (
-            <TouchableOpacity
-              onPress={() => {
+          { createButton('test',() => {
                 
                 d1 = getDistance(this.state.polygons[0].coordinates[0], this.state.polygons[0].coordinates[1])
                 d2 = getDistance(this.state.polygons[0].coordinates[1], this.state.polygons[0].coordinates[2])
@@ -431,11 +412,7 @@ class PolygonCreator extends React.Component<any, any> {
                 log(d2)
                 
 
-              } }
-              style={[styles.bubble, styles.button]}>
-              <Text>poly</Text>
-            </TouchableOpacity>
-          )}
+          })}
         </View>
 
       </View>
