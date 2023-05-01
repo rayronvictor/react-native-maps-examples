@@ -19,6 +19,7 @@ import { getAreaOfPolygon, getDistance } from 'geolib';
 
 const {width, height} = Dimensions.get('window');
 
+const EARTH_RADIUS = 6371000.0;
 const PRECISION = 2
 const ASPECT_RATIO = width / height;
 const LATITUDE = -5.8464;
@@ -45,7 +46,11 @@ function findIdForPolyId(newPolygons, polyId) {
 }
 
 
-function computeAngle(p1, p2) {
+function computeAngle(c1:any, c2:any) {
+
+  let p1 = [Math.PI*c1[0]*EARTH_RADIUS/180.0 , Math.cos(c1[0]*Math.PI/180.0)*c1[1]*Math.PI*EARTH_RADIUS/180.0];
+  let p2 = [Math.PI*c2[0]*EARTH_RADIUS/180.0 , Math.cos(c2[0]*Math.PI/180.0)*c2[1]*Math.PI*EARTH_RADIUS/180.0];
+
   return 90.0+Math.atan2(p1[1]-p2[1],p1[0]-p2[0])*180/Math.PI;
 }
 
@@ -53,16 +58,27 @@ function computeAreaNutela(coordinates:any) {
 
   let XY = coordinates.map( (coord:any) => [coord.latitude , coord.longitude] )
 
-  return getAreaOfPolygon(XY)
-
+  return getAreaOfPolygon(XY);
 }
+
+function computeDistanceNutela(c1:any, c2:any) {
+
+  return getDistance(c1,c2);
+}
+
+
+function computeDistanceChuckNorris(c1:any, c2:any) {
+
+  let p1 = [Math.PI*c1[0]*EARTH_RADIUS/180.0 , Math.cos(c1[0]*Math.PI/180.0)*c1[1]*Math.PI*EARTH_RADIUS/180.0];
+  let p2 = [Math.PI*c2[0]*EARTH_RADIUS/180.0 , Math.cos(c2[0]*Math.PI/180.0)*c2[1]*Math.PI*EARTH_RADIUS/180.0];
+
+  return Math.sqrt( (p1[0]-p2[0])**2 +  (p1[1]-p2[1])**2 )
+}
+
 
 function computeAreaChuckNorris(coordinates:any) {
 
-  let radius = 6371000;
-
-  let XY = coordinates.map( (coord:any) => [Math.PI*coord.latitude*radius/180.0 , Math.cos(coord.latitude*Math.PI/180.0)*coord.longitude*Math.PI*radius/180.0] )
-
+  let XY = coordinates.map( (coord:any) => [Math.PI*coord.latitude*EARTH_RADIUS/180.0 , Math.cos(coord.latitude*Math.PI/180.0)*coord.longitude*Math.PI*EARTH_RADIUS/180.0] )
 
   var area = 0.0;
   for (let id=0; id< XY.length; id++) {
@@ -77,16 +93,18 @@ function computeAreaChuckNorris(coordinates:any) {
     let currentX = XY[roundId][1];
 
     area += (currentY+previousY)*(currentX-previousX)/2.0;
-
   }
 
   return Math.abs(area);
-
 }
 
 
 let computeArea = computeAreaChuckNorris;
 //let computeArea = computeAreaNutela;
+
+let computeDistance = computeDistanceChuckNorris;
+//let computeDistance = computeDistanceNutela;
+
 
 
 
@@ -353,7 +371,7 @@ class PolygonCreator extends React.Component<any, any> {
         let p1 = [coords[i].latitude, coords[i].longitude]
         let p2 = [coords[(i+1)%coords.length].latitude, coords[(i+1)%coords.length].longitude]
 
-        let distance = getDistance(p1,p2)
+        let distance = computeDistance(p1,p2)
         let angle = computeAngle(p1,p2)
 
         let center = {"latitude":(p1[0]+p2[0])/2.0, "longitude":(p1[1]+p2[1])/2.0}
