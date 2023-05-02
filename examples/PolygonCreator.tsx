@@ -1,7 +1,7 @@
 // TODO: make marker transparent on creating state (aparently iOS can do it but android dont...)
 // TODO: when editing, consolidate polygon on onDragEnd to allow move more than one marker in the same edit section
 
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -34,7 +34,7 @@ var isJoining = false;
 
 log = console.log;
 
-
+var globalMapHeading = 0.0;
 
 function findIdForPolyId(newPolygons, polyId) {
   var id = 0;
@@ -51,7 +51,7 @@ function computeAngle(c1:any, c2:any) {
   let p1 = [Math.PI*c1[0]*EARTH_RADIUS/180.0 , Math.cos(c1[0]*Math.PI/180.0)*c1[1]*Math.PI*EARTH_RADIUS/180.0];
   let p2 = [Math.PI*c2[0]*EARTH_RADIUS/180.0 , Math.cos(c2[0]*Math.PI/180.0)*c2[1]*Math.PI*EARTH_RADIUS/180.0];
 
-  return 90.0+Math.atan2(p1[1]-p2[1],p1[0]-p2[0])*180/Math.PI;
+  return 90.0+Math.atan2(p1[1]-p2[1],p1[0]-p2[0])*180/Math.PI - globalMapHeading;
 }
 
 function computeAreaNutela(coordinates:any) {
@@ -376,6 +376,7 @@ class PolygonCreator extends React.Component<any, any> {
 
         let center = {"latitude":(p1[0]+p2[0])/2.0, "longitude":(p1[1]+p2[1])/2.0}
 
+
         markers.push(
           <Marker
             key={'m'+polygon.id + '-' + i}
@@ -386,13 +387,13 @@ class PolygonCreator extends React.Component<any, any> {
                   }}>
 
                 <Text 
-                key={'te'+polygon.id + '-' + i}
-                style={{
-                      fontWeight: 'bold',
-                      color: 'white',
-                  }} 
-                  tappable={false}>
-                  {"D = " + distance.toFixed(PRECISION)}
+                  key={'te'+polygon.id + '-' + i}
+                  style={{
+                        fontWeight: 'bold',
+                        color: 'white',
+                    }} 
+                    tappable={false}>
+                    {"D = " + distance.toFixed(PRECISION)}
                 </Text>
           </Marker>
         )
@@ -411,7 +412,7 @@ class PolygonCreator extends React.Component<any, any> {
     );
 
 
-
+    const mapRef = React.createRef();
 
     return (
       <View style={styles.container}>
@@ -421,6 +422,16 @@ class PolygonCreator extends React.Component<any, any> {
           mapType={MAP_TYPES.HYBRID}
           initialRegion={this.state.region}
           onPress={e => this.onPress(e)}
+          ref={mapRef}
+
+          onRegionChange={(e) => {
+            mapRef.current.getCamera().then((c)=>{
+              globalMapHeading = c.heading;
+
+              this.forceUpdate();              
+            });
+          }}
+
           {...mapOptions}>
 
           {this.state.polygons.map((polygon: any) => (
